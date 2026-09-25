@@ -1,6 +1,10 @@
-"""Conectores a fuentes externas de datos globales (fase posterior).
+"""Conectores a fuentes externas de datos globales.
 
-Previstos: Banrep (UVR, IBR, TRM), DANE (IPC) y Superfinanciera (valor de
-unidad de los FIC). Cada conector descarga y guarda en ``Serie``/``ValorSerie``;
-nunca escribe datos personales.
+Cada conector devuelve observaciones ``(fecha, valor)`` de una serie; el
+servicio ``services.series`` las guarda en ``Serie``/``ValorSerie``. Los
+conectores nunca tocan datos personales.
+
+* ``socrata``: API de datos abiertos (www.datos.gov.co).
+* ``archivo``: CSV o Excel descargados a mano de Banrep, DANE o Superfinanciera.
+* ``catalogo``: definiciones de las series conocidas (UVR, IPC, IBR, TRM).
 """

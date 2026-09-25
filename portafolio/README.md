@@ -10,12 +10,13 @@ varios.
 
 ```
 src/portafolio/
-├── core/        # cálculos puros: xirr, dietz, twr, cdt, impuestos, calendario (luego inflacion)
+├── core/        # cálculos puros: xirr, dietz, twr, cdt, impuestos, inflacion, calendario
 ├── data/        # modelos SQLAlchemy, tipos, conexión, repositorios
-├── services/    # casos de uso: rendimientos, cdt, impuestos, parametros, csv_io
-├── sources/     # conectores Banrep, DANE, Superfinanciera (fase posterior)
+├── services/    # casos de uso: rendimientos, inflacion, series, cdt, impuestos, parametros, csv_io
+├── sources/     # conectores: datos.gov.co (Socrata), archivos CSV/Excel, catálogo de series
 ├── api/         # FastAPI (fase multiusuario)
-└── ui/          # Streamlit
+├── ui/          # Streamlit
+└── cli.py       # python -m portafolio ...
 migrations/      # Alembic
 datos/           # parametros_ejemplo.csv
 tests/           # incluye casos/xirr_excel.csv, validados contra Excel
@@ -180,7 +181,7 @@ Convenciones (verifíquelas contra su extracto):
 - Un pago que cae en fin de semana o festivo se hace el siguiente día hábil,
   **sin intereses por los días de espera**.
 - Aún no se proyectan CDT con intereses anticipados ni de tasa variable
-  (IBR, IPC + puntos); la tasa variable llega con los conectores de la fase 4.
+  (IBR, IPC + puntos).
 
 ### GMF
 
@@ -190,12 +191,66 @@ cada mes están exentos, y la exención se consume en orden cronológico. El GMF
 de las transferencias para comprar un instrumento no se estima, porque el
 modelo no registra de qué cuenta sale ese dinero.
 
+## Series e inflación
+
+### Cargar series
+
+Las series globales (UVR, IPC, IBR, TRM, valores de unidad de FIC) se cargan
+una vez y las comparten todos los portafolios.
+
+```bash
+alembic upgrade head
+python -m portafolio parametros importar datos/parametros_ejemplo.csv
+
+# Desde un archivo descargado de la fuente (CSV o Excel):
+python -m portafolio series importar UVR uvr.csv --col-fecha "Fecha" --col-valor "Valor" --decimal ,
+python -m portafolio series importar IPC ipc.xlsx --col-fecha "Mes" --col-valor "Índice"
+python -m portafolio series importar IBR_3M ibr.csv --escala 0.01      # de % a fracción
+python -m portafolio series importar FIC:renta-fija fic.csv --nombre "FIC Renta Fija"
+
+# Desde datos.gov.co (solo series con conector configurado):
+python -m portafolio series actualizar TRM
+
+python -m portafolio series listar
+```
+
+El lector de archivos busca la fila de encabezado aunque haya títulos antes,
+detecta `;` o `,`, entiende fechas `dd/mm/aaaa`, `aaaa-mm-dd` y meses
+(`2024-03`, `03/2024`), y salta celdas vacías, `n.d.` y notas al pie. Si una
+fila no se puede leer, no se guarda nada y se listan todas las filas con
+error. Volver a importar corrige los valores que la fuente haya revisado.
+
+**Conectores automáticos.** `ConectorSocrata` consulta cualquier conjunto de
+www.datos.gov.co: se le da el identificador del conjunto, los campos de fecha y
+valor, y filtros opcionales (p. ej. el nombre de un fondo). Solo la TRM viene
+configurada (conjunto `32sa-8pi3`). Los conectores no se pudieron probar
+contra la fuente real porque el entorno de desarrollo no tenía acceso a esos
+sitios; verifique el conjunto y los campos antes de confiar en ellos. Con la
+variable `PORTAFOLIO_SOCRATA_TOKEN` se envía un token de aplicación.
+
+### Rendimientos reales
+
+| Función | Qué hace |
+|---|---|
+| `tir_real_portafolio`, `tir_real_instrumento` | Pasa cada flujo a pesos de la fecha de corte y calcula la TIR |
+| `twr_real_portafolio`, `twr_real_instrumento`, `dietz_real_portafolio` | Rendimiento nominal, inflación del periodo y rendimiento real por Fisher: (1 + r) / (1 + π) − 1 |
+| `en_pesos_de` | Expresa un monto en pesos de otra fecha |
+
+- Por defecto se usa la **UVR**: es diaria y se publica por adelantado, así que
+  sirve para fechas recientes. Con `serie="IPC"` se usa el índice mensual del
+  DANE: cada fecha toma el IPC de su mes.
+- Si falta el valor de un día (UVR) o de un mes (IPC), el cálculo se detiene
+  con `ValorNoDisponibleError` en lugar de usar un valor anterior.
+- La inflación y el rendimiento real solo se anualizan en periodos de un año
+  o más, igual que el nominal.
+
 ## Fases
 
 1. Esqueleto, modelo de datos y XIRR ✔
 2. TWR y Dietz modificado ✔
 3. Causación de CDT, retención y GMF ✔
-4. Deflactación con UVR/IPC y conectores (Banrep, DANE, Superfinanciera)
+4. Deflactación con UVR/IPC y conectores ✔
+   (pendiente: CDT de tasa variable IBR/IPC + puntos)
 5. Atribución de rendimientos e interfaz Streamlit
 6. Multiusuario: API FastAPI, autenticación, PostgreSQL, despliegue, política
    de tratamiento de datos (Ley 1581 de 2012)

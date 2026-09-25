@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from portafolio.data.modelos import Instrumento, Movimiento, Parametro, Valoracion
+from portafolio.data.modelos import Instrumento, Movimiento, Parametro, Serie, ValorSerie, Valoracion
 
 
 class ParametroNoDefinidoError(LookupError):
@@ -71,3 +71,22 @@ def valoraciones_hasta(
     if instrumento_id is not None:
         consulta = consulta.where(Valoracion.instrumento_id == instrumento_id)
     return list(sesion.scalars(consulta.order_by(Valoracion.fecha, Valoracion.id)))
+
+
+class SerieNoEncontradaError(LookupError):
+    pass
+
+
+def serie_por_codigo(sesion: Session, codigo: str) -> Serie | None:
+    return sesion.scalar(select(Serie).where(Serie.codigo == codigo))
+
+
+def valores_de_serie(
+    sesion: Session, serie_id: int, desde: date | None = None, hasta: date | None = None
+) -> list[tuple[date, Decimal]]:
+    consulta = select(ValorSerie.fecha, ValorSerie.valor).where(ValorSerie.serie_id == serie_id)
+    if desde is not None:
+        consulta = consulta.where(ValorSerie.fecha >= desde)
+    if hasta is not None:
+        consulta = consulta.where(ValorSerie.fecha <= hasta)
+    return [tuple(fila) for fila in sesion.execute(consulta.order_by(ValorSerie.fecha))]

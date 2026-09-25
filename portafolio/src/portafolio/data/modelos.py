@@ -33,6 +33,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from portafolio.core.calendario import ahora_bogota
 from portafolio.core.cdt import Modalidad, Periodicidad, TipoTasa
+from portafolio.core.inflacion import Frecuencia
 from portafolio.data.tipos import Dinero, Tasa
 
 # Nombres de restricciones deterministas: Alembic los necesita para poder
@@ -104,6 +105,10 @@ class Serie(Base):
     tipo: Mapped[TipoSerie] = mapped_column(_enum(TipoSerie))
     fuente: Mapped[str | None] = mapped_column(String(100))  # "Banrep", "DANE", "Superfinanciera"
     unidad: Mapped[str | None] = mapped_column(String(40))
+    # MENSUAL: un valor por mes, guardado con fecha del día 1 (IPC).
+    frecuencia: Mapped[Frecuencia] = mapped_column(
+        _enum(Frecuencia), default=Frecuencia.DIARIA, server_default=Frecuencia.DIARIA.value
+    )
 
     valores: Mapped[list[ValorSerie]] = relationship(back_populates="serie")
 
