@@ -85,7 +85,7 @@ class ResultadoPeriodo:
         return (self.fecha_fin - self.fecha_inicio).days
 
 
-class _Libro:
+class Libro:
     """Movimientos y valoraciones cargados una vez para valorar en cualquier fecha."""
 
     def __init__(
@@ -111,7 +111,7 @@ class _Libro:
             lista.sort(key=lambda v: v.fecha)
 
     @classmethod
-    def de_portafolio(cls, sesion: Session, portafolio_id: int, hasta: date) -> _Libro:
+    def de_portafolio(cls, sesion: Session, portafolio_id: int, hasta: date) -> Libro:
         return cls(
             repositorios.instrumentos_de(sesion, portafolio_id),
             repositorios.movimientos_hasta(sesion, hasta, portafolio_id=portafolio_id),
@@ -120,7 +120,7 @@ class _Libro:
         )
 
     @classmethod
-    def de_instrumento(cls, sesion: Session, instrumento_id: int, hasta: date) -> _Libro:
+    def de_instrumento(cls, sesion: Session, instrumento_id: int, hasta: date) -> Libro:
         instrumento = sesion.get(Instrumento, instrumento_id)
         if instrumento is None:
             raise LookupError(f"No existe el instrumento {instrumento_id}.")
@@ -131,7 +131,7 @@ class _Libro:
             SIGNO_INSTRUMENTO,
         )
 
-    def _valor_instrumento(self, instrumento: Instrumento, fecha: date) -> tuple[Decimal, date | None]:
+    def valor_instrumento(self, instrumento: Instrumento, fecha: date) -> tuple[Decimal, date | None]:
         vals = self._vals[instrumento.id]
         i = bisect_right([v.fecha for v in vals], fecha)
         valoracion = vals[i - 1] if i else None
@@ -152,7 +152,7 @@ class _Libro:
         total = Decimal(0)
         fechas: dict[int, date] = {}
         for instrumento in self.instrumentos:
-            valor, fecha_val = self._valor_instrumento(instrumento, fecha)
+            valor, fecha_val = self.valor_instrumento(instrumento, fecha)
             total += valor
             if fecha_val:
                 fechas[instrumento.id] = fecha_val
@@ -178,7 +178,7 @@ class _Libro:
 # --------------------------------------------------------------------------
 
 
-def _tir(libro: _Libro, fecha_corte: date) -> ResultadoTIR:
+def _tir(libro: Libro, fecha_corte: date) -> ResultadoTIR:
     valor_final, fechas = libro.valor(fecha_corte)
     flujos = libro.flujos_inversionista(fecha_corte)
     if valor_final:
@@ -198,12 +198,12 @@ def tir_portafolio(sesion: Session, portafolio_id: int, fecha_corte: date) -> Re
     El valor al corte es la suma de las valoraciones de sus instrumentos,
     incluidas las cuentas de efectivo (``TipoInstrumento.CUENTA``).
     """
-    return _tir(_Libro.de_portafolio(sesion, portafolio_id, fecha_corte), fecha_corte)
+    return _tir(Libro.de_portafolio(sesion, portafolio_id, fecha_corte), fecha_corte)
 
 
 def tir_instrumento(sesion: Session, instrumento_id: int, fecha_corte: date) -> ResultadoTIR:
     """TIR de un instrumento: compras, ventas, rendimientos pagados y valor al corte."""
-    return _tir(_Libro.de_instrumento(sesion, instrumento_id, fecha_corte), fecha_corte)
+    return _tir(Libro.de_instrumento(sesion, instrumento_id, fecha_corte), fecha_corte)
 
 
 # --------------------------------------------------------------------------
@@ -220,7 +220,7 @@ def _anualizado(rendimiento: float, dias: int) -> float | None:
     return anualizar(rendimiento, dias) if dias >= DIAS_MINIMOS_ANUALIZAR else None
 
 
-def _dietz(libro: _Libro, fecha_inicio: date, fecha_fin: date) -> ResultadoPeriodo:
+def _dietz(libro: Libro, fecha_inicio: date, fecha_fin: date) -> ResultadoPeriodo:
     _validar_periodo(fecha_inicio, fecha_fin)
     v0, _ = libro.valor(fecha_inicio)
     v1, _ = libro.valor(fecha_fin)
@@ -239,7 +239,7 @@ def _dietz(libro: _Libro, fecha_inicio: date, fecha_fin: date) -> ResultadoPerio
     )
 
 
-def _twr(libro: _Libro, fecha_inicio: date, fecha_fin: date) -> ResultadoPeriodo:
+def _twr(libro: Libro, fecha_inicio: date, fecha_fin: date) -> ResultadoPeriodo:
     _validar_periodo(fecha_inicio, fecha_fin)
     v0, _ = libro.valor(fecha_inicio)
     v1, _ = libro.valor(fecha_fin)
@@ -273,13 +273,13 @@ def dietz_portafolio(
     sesion: Session, portafolio_id: int, fecha_inicio: date, fecha_fin: date
 ) -> ResultadoPeriodo:
     """Dietz modificado del portafolio con su valor al inicio y al final del periodo."""
-    return _dietz(_Libro.de_portafolio(sesion, portafolio_id, fecha_fin), fecha_inicio, fecha_fin)
+    return _dietz(Libro.de_portafolio(sesion, portafolio_id, fecha_fin), fecha_inicio, fecha_fin)
 
 
 def dietz_instrumento(
     sesion: Session, instrumento_id: int, fecha_inicio: date, fecha_fin: date
 ) -> ResultadoPeriodo:
-    return _dietz(_Libro.de_instrumento(sesion, instrumento_id, fecha_fin), fecha_inicio, fecha_fin)
+    return _dietz(Libro.de_instrumento(sesion, instrumento_id, fecha_fin), fecha_inicio, fecha_fin)
 
 
 def twr_portafolio(
@@ -291,10 +291,10 @@ def twr_portafolio(
     cada fecha de aporte o retiro. Un instrumento sin valoración ese día usa la
     última anterior mientras no haya tenido movimientos desde entonces.
     """
-    return _twr(_Libro.de_portafolio(sesion, portafolio_id, fecha_fin), fecha_inicio, fecha_fin)
+    return _twr(Libro.de_portafolio(sesion, portafolio_id, fecha_fin), fecha_inicio, fecha_fin)
 
 
 def twr_instrumento(
     sesion: Session, instrumento_id: int, fecha_inicio: date, fecha_fin: date
 ) -> ResultadoPeriodo:
-    return _twr(_Libro.de_instrumento(sesion, instrumento_id, fecha_fin), fecha_inicio, fecha_fin)
+    return _twr(Libro.de_instrumento(sesion, instrumento_id, fecha_fin), fecha_inicio, fecha_fin)

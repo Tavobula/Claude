@@ -62,9 +62,9 @@ class Indice:
         i = bisect_left(self.fechas, clave)
         if i < len(self.fechas) and self.fechas[i] == clave:
             return self.valores[i]
-        if not self.fechas:
-            raise ValorNoDisponibleError(f"La serie {self.codigo} no tiene datos.")
         periodo = f"{clave:%Y-%m}" if self.frecuencia is Frecuencia.MENSUAL else clave.isoformat()
+        if not self.fechas:
+            raise ValorNoDisponibleError(f"La serie {self.codigo} no tiene datos para {periodo}. Actualice la serie.")
         raise ValorNoDisponibleError(
             f"{self.codigo} no tiene valor para {periodo} "
             f"(hay datos de {self.fechas[0]} a {self.fechas[-1]}). Actualice la serie."

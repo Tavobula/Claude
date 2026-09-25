@@ -47,7 +47,7 @@ def test_indice_invalido():
         Indice.crear("UVR", Frecuencia.DIARIA, [(date(2025, 1, 1), D("0"))])
     with pytest.raises(ValueError, match="distintos"):
         Indice.crear("UVR", Frecuencia.DIARIA, [(date(2025, 1, 1), D("1")), (date(2025, 1, 1), D("2"))])
-    with pytest.raises(ValorNoDisponibleError, match="no tiene datos"):
+    with pytest.raises(ValorNoDisponibleError, match="no tiene datos para 2025-01-01"):
         Indice.crear("UVR", Frecuencia.DIARIA, []).valor_en(date(2025, 1, 1))
 
 

@@ -19,7 +19,7 @@ from collections.abc import Iterable, Iterator
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import TextIO
+from typing import BinaryIO, TextIO
 
 from portafolio.sources.base import Observacion
 
@@ -130,8 +130,8 @@ def leer_csv(archivo: TextIO, **opciones) -> list[Observacion]:
     return leer_filas(csv.reader(archivo, dialecto), **opciones)
 
 
-def leer_excel(ruta: str | Path, hoja: str | None = None, **opciones) -> list[Observacion]:
-    """Requiere ``openpyxl`` (``pip install openpyxl``)."""
+def leer_excel(ruta: str | Path | BinaryIO, hoja: str | None = None, **opciones) -> list[Observacion]:
+    """Requiere ``openpyxl`` (``pip install openpyxl``). Acepta una ruta o un archivo binario abierto."""
     try:
         import openpyxl
     except ImportError as error:  # pragma: no cover - depende del entorno

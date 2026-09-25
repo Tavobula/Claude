@@ -10,12 +10,13 @@ varios.
 
 ```
 src/portafolio/
-├── core/        # cálculos puros: xirr, dietz, twr, cdt, impuestos, inflacion, calendario
+├── core/        # cálculos puros: xirr, dietz, twr, atribucion, cdt, impuestos, inflacion, calendario
 ├── data/        # modelos SQLAlchemy, tipos, conexión, repositorios
-├── services/    # casos de uso: rendimientos, inflacion, series, cdt, impuestos, parametros, csv_io
+├── services/    # casos de uso: rendimientos, atribucion, inflacion, series, cdt, impuestos,
+│                #   registro, consultas, parametros, csv_io, demo
 ├── sources/     # conectores: datos.gov.co (Socrata), archivos CSV/Excel, catálogo de series
 ├── api/         # FastAPI (fase multiusuario)
-├── ui/          # Streamlit
+├── ui/          # Streamlit: app.py, graficos.py, formato.py
 └── cli.py       # python -m portafolio ...
 migrations/      # Alembic
 datos/           # parametros_ejemplo.csv
@@ -44,10 +45,24 @@ Reglas:
 
 ```bash
 cd portafolio
-pip install -e ".[dev]"
+pip install -e ".[dev,ui]"
 alembic upgrade head          # crea portafolio.db (SQLite)
 pytest
+streamlit run src/portafolio/ui/app.py
 ```
+
+Para explorar con datos ficticios, use una base aparte (la demo trae una UVR
+sintética y una tarifa de retención de ejemplo que no deben mezclarse con
+datos reales):
+
+```bash
+PORTAFOLIO_DB_URL=sqlite:///demo.db alembic upgrade head
+python -m portafolio --db sqlite:///demo.db demo
+PORTAFOLIO_DB_URL=sqlite:///demo.db streamlit run src/portafolio/ui/app.py
+```
+
+Abra `http://localhost:8501/?fecha=2025-09-24` para ver la demo en su fecha;
+el parámetro `fecha` fija la fecha de corte inicial en cualquier base.
 
 Para usar PostgreSQL basta con cambiar la URL:
 
@@ -244,6 +259,41 @@ variable `PORTAFOLIO_SOCRATA_TOKEN` se envía un token de aplicación.
 - La inflación y el rendimiento real solo se anualizan en periodos de un año
   o más, igual que el nominal.
 
+## Atribución e interfaz
+
+### Atribución
+
+`atribucion_portafolio(sesion, portafolio_id, desde, hasta, por="instrumento" | "tipo")`
+reparte el rendimiento Dietz del periodo entre las partes del portafolio. Para
+cada una da ganancia en pesos, peso promedio, rendimiento propio y
+contribución; **las contribuciones suman exactamente el Dietz del portafolio**.
+
+- Todas las cuentas forman un solo segmento **Efectivo**. Sus flujos se
+  deducen: son los aportes y retiros del portafolio menos lo que entró o salió
+  de los demás instrumentos. Así, una compra registrada solo en el CDT también
+  sale del efectivo.
+- Si no hay cuentas, aparece **Efectivo no registrado** cuando entró dinero
+  que no llegó a ningún instrumento valorado (o salió sin registrarse).
+- Es una atribución de un solo periodo: suma al Dietz, no al TWR encadenado.
+
+### Interfaz (Streamlit)
+
+| Pestaña | Contenido |
+|---|---|
+| Resumen | Valor, aportes, ganancia, TIR nominal y real, TWR del año; evolución del valor frente a los aportes; posiciones |
+| Rendimientos | TWR y Dietz nominales y reales para cualquier periodo; atribución por instrumento o tipo |
+| Movimientos | Registrar y eliminar movimientos, registrar valoraciones, importar y exportar CSV |
+| Instrumentos | Crear instrumentos, condiciones y proyección de CDT, registro automático de pagos, GMF de una cuenta |
+| Datos | Cargar series (UVR, IPC, IBR, FIC) desde archivo, actualizar la TRM, ver y cargar parámetros |
+
+- Los montos se escriben en formato colombiano (`1.500.000` o `1.500.000,50`)
+  y se leen como `Decimal`, nunca como `float`.
+- Cada gráfico tiene leyenda, tooltip y una tabla con los mismos datos.
+  Los colores están validados para daltonismo en modo claro y oscuro.
+- La interfaz no hace SQL ni cálculos: todo pasa por `services`, incluido el
+  registro de datos (`services/registro.py`), que valida montos, pertenencia
+  al portafolio y condiciones de CDT.
+
 ## Fases
 
 1. Esqueleto, modelo de datos y XIRR ✔
@@ -251,6 +301,6 @@ variable `PORTAFOLIO_SOCRATA_TOKEN` se envía un token de aplicación.
 3. Causación de CDT, retención y GMF ✔
 4. Deflactación con UVR/IPC y conectores ✔
    (pendiente: CDT de tasa variable IBR/IPC + puntos)
-5. Atribución de rendimientos e interfaz Streamlit
+5. Atribución de rendimientos e interfaz Streamlit ✔
 6. Multiusuario: API FastAPI, autenticación, PostgreSQL, despliegue, política
    de tratamiento de datos (Ley 1581 de 2012)

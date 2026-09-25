@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import io
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
+from pathlib import PurePath
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from portafolio.core.inflacion import normalizar_fecha
 from portafolio.data import repositorios
-from portafolio.data.modelos import Serie, ValorSerie
+from portafolio.data.modelos import Parametro, Serie, ValorSerie
+from portafolio.sources import archivo
 from portafolio.sources.base import Conector, DefinicionSerie, Observacion
 
 
@@ -88,3 +91,62 @@ def ultima_fecha(sesion: Session, codigo: str) -> date | None:
         return None
     valores = repositorios.valores_de_serie(sesion, serie.id)
     return valores[-1][0] if valores else None
+
+
+def importar_archivo(
+    sesion: Session,
+    definicion: DefinicionSerie,
+    contenido: bytes,
+    nombre_archivo: str,
+    *,
+    codificacion: str = "utf-8-sig",
+    hoja: str | None = None,
+    **opciones,
+) -> ResumenCarga:
+    """Carga una serie desde el contenido de un CSV o Excel (subido o leído de disco).
+
+    ``opciones`` son las de ``sources.archivo.leer_filas`` (columnas, decimal,
+    formato de fecha, escala).
+    """
+    if PurePath(nombre_archivo).suffix.lower() in (".xlsx", ".xlsm"):
+        observaciones = archivo.leer_excel(io.BytesIO(contenido), hoja, **opciones)
+    else:
+        try:
+            texto = contenido.decode(codificacion)
+        except UnicodeDecodeError:
+            texto = contenido.decode("latin-1")  # típico de CSV guardados desde Excel en Windows
+        observaciones = archivo.leer_csv(io.StringIO(texto, newline=""), **opciones)
+    return guardar_observaciones(sesion, definicion, observaciones)
+
+
+@dataclass(frozen=True)
+class InfoSerie:
+    codigo: str
+    nombre: str
+    frecuencia: str
+    fuente: str | None
+    datos: int
+    primera: date | None
+    ultima: date | None
+
+
+def listar_series(sesion: Session) -> list[InfoSerie]:
+    resultado = []
+    for serie in sesion.scalars(select(Serie).order_by(Serie.codigo)):
+        valores = repositorios.valores_de_serie(sesion, serie.id)
+        resultado.append(
+            InfoSerie(
+                serie.codigo,
+                serie.nombre,
+                serie.frecuencia.value,
+                serie.fuente,
+                len(valores),
+                valores[0][0] if valores else None,
+                valores[-1][0] if valores else None,
+            )
+        )
+    return resultado
+
+
+def listar_parametros(sesion: Session) -> list[Parametro]:
+    return list(sesion.scalars(select(Parametro).order_by(Parametro.nombre, Parametro.vigente_desde)))

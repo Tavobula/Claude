@@ -12,10 +12,8 @@ from conftest import d
 from portafolio.core.cdt import Periodicidad
 from portafolio.data.modelos import (
     CondicionCDT,
-    Instrumento,
     Movimiento,
     Parametro,
-    TipoInstrumento,
     TipoMovimiento,
     Valoracion,
 )

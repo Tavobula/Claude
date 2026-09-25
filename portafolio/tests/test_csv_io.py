@@ -1,5 +1,4 @@
 import io
-from decimal import Decimal
 
 import pytest
 

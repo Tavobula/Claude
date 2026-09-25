@@ -7,6 +7,7 @@ Ejemplos:
     python -m portafolio series actualizar TRM --desde 2024-01-01
     python -m portafolio series listar
     python -m portafolio parametros importar datos/parametros_ejemplo.csv
+    python -m portafolio --db sqlite:///demo.db demo
 """
 
 from __future__ import annotations
@@ -17,15 +18,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from portafolio.core.calendario import hoy_bogota
 from portafolio.data.db import crear_motor, fabrica_sesiones
-from portafolio.data.modelos import Serie
 from portafolio.sources import archivo, catalogo
 from portafolio.sources.base import DefinicionSerie, ErrorFuente
-from portafolio.services import csv_io, series
+from portafolio.services import csv_io, demo, series
 
 
 def _definicion(codigo: str, nombre: str | None) -> DefinicionSerie:
@@ -47,12 +46,10 @@ def _importar(args, sesion) -> str:
         escala=Decimal(args.escala),
     )
     ruta = Path(args.archivo)
-    if ruta.suffix.lower() in (".xlsx", ".xlsm"):
-        observaciones = archivo.leer_excel(ruta, args.hoja, **opciones)
-    else:
-        with ruta.open(encoding=args.codificacion, newline="") as f:
-            observaciones = archivo.leer_csv(f, **opciones)
-    return _resumen(series.guardar_observaciones(sesion, definicion, observaciones))
+    resumen = series.importar_archivo(
+        sesion, definicion, ruta.read_bytes(), ruta.name, codificacion=args.codificacion, hoja=args.hoja, **opciones
+    )
+    return _resumen(resumen)
 
 
 def _actualizar(args, sesion) -> str:
@@ -68,16 +65,21 @@ def _actualizar(args, sesion) -> str:
 
 
 def _listar(_args, sesion) -> str:
-    lineas = []
-    for serie in sesion.scalars(select(Serie).order_by(Serie.codigo)):
-        ultima = series.ultima_fecha(sesion, serie.codigo)
-        lineas.append(f"{serie.codigo:<20} {serie.frecuencia.value:<8} último dato: {ultima or '-'}  {serie.nombre}")
+    lineas = [
+        f"{s.codigo:<20} {s.frecuencia:<8} último dato: {s.ultima or '-'}  {s.nombre}"
+        for s in series.listar_series(sesion)
+    ]
     return "\n".join(lineas) or "No hay series cargadas."
 
 
 def _parametros(args, sesion) -> str:
     with open(args.archivo, encoding="utf-8") as f:
         return f"{csv_io.importar_parametros(sesion, f)} parámetros cargados."
+
+
+def _demo(_args, sesion) -> str:
+    portafolio = demo.crear_demo(sesion)
+    return f"Portafolio '{portafolio.nombre}' creado con datos ficticios."
 
 
 def _resumen(r: series.ResumenCarga) -> str:
@@ -116,6 +118,7 @@ def construir_parser() -> argparse.ArgumentParser:
     pimp = p.add_parser("importar", help="Carga parámetros desde CSV")
     pimp.add_argument("archivo")
     pimp.set_defaults(funcion=_parametros)
+    grupos.add_parser("demo", help="Crea datos ficticios en una base vacía").set_defaults(funcion=_demo)
     return parser
 
 
@@ -126,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         with fabrica_sesiones(motor)() as sesion:
             mensaje = args.funcion(args, sesion)
             sesion.commit()
-    except (archivo.ErrorLectura, csv_io.ErrorImportacion, ErrorFuente, ValueError) as error:
+    except (archivo.ErrorLectura, csv_io.ErrorImportacion, ErrorFuente, ValueError, demo.BaseNoVaciaError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
     except (OperationalError, ProgrammingError) as error:
