@@ -11,6 +11,7 @@ SQL ni hace cálculos financieros propios.
 from __future__ import annotations
 
 import io
+import os
 from datetime import date
 from decimal import Decimal
 
@@ -601,6 +602,11 @@ def _datos(sesion: Session) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="Portafolio", page_icon="📈", layout="wide")
+    if os.environ.get("PORTAFOLIO_ENTORNO") == "produccion":
+        # Esta interfaz no tiene ingreso de usuarios: en un servidor compartido
+        # cualquiera vería todos los portafolios. Para varios usuarios, use la API.
+        st.error("La interfaz Streamlit es de uso personal y no se ejecuta con PORTAFOLIO_ENTORNO=produccion.")
+        return
     fabrica = _fabrica(url_base_datos())
     with fabrica() as sesion:
         try:

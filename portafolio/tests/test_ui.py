@@ -130,3 +130,10 @@ def test_registrar_movimiento_invalido_muestra_error(base):
     boton.click().run()
     assert not at.exception
     assert any("Monto inválido" in e.value for e in at.error)
+
+
+def test_no_corre_en_produccion(base, monkeypatch):
+    monkeypatch.setenv("PORTAFOLIO_ENTORNO", "produccion")
+    at = _app().run()
+    assert "uso personal" in at.error[0].value
+    assert not at.text_input  # no muestra formularios ni datos

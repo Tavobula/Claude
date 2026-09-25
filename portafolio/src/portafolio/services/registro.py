@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from portafolio.core.cdt import Modalidad, Periodicidad, TerminosCDT, TipoTasa
+from portafolio.data.tipos import Dinero, EscalaExcedidaError, Tasa, validar_escala
 from portafolio.data.modelos import (
     CondicionCDT,
     Instrumento,
@@ -30,13 +31,16 @@ class DatoInvalidoError(ValueError):
     pass
 
 
-def _positivo(valor: Decimal, nombre: str, permitir_cero: bool = False) -> Decimal:
+def _positivo(valor: Decimal, nombre: str, permitir_cero: bool = False, escala: int = Dinero.escala) -> Decimal:
     if isinstance(valor, float):
         raise DatoInvalidoError(f"{nombre}: use Decimal, no float.")
     valor = Decimal(valor)
     if valor < 0 or (valor == 0 and not permitir_cero):
         raise DatoInvalidoError(f"{nombre} debe ser {'cero o ' if permitir_cero else ''}positivo.")
-    return valor
+    try:
+        return validar_escala(valor, escala, nombre)
+    except EscalaExcedidaError as error:
+        raise DatoInvalidoError(str(error)) from None
 
 
 def _nombre(texto: str, campo: str = "El nombre") -> str:
@@ -185,7 +189,7 @@ def registrar_condicion_cdt(
     if instrumento.tipo is not TipoInstrumento.CDT:
         raise DatoInvalidoError(f"{instrumento.nombre!r} no es un CDT.")
     capital = _positivo(capital, "El capital")
-    tasa = _positivo(tasa, "La tasa", permitir_cero=True)
+    tasa = _positivo(tasa, "La tasa", permitir_cero=True, escala=Tasa.escala)
     try:
         terminos = TerminosCDT(
             capital, fecha_emision, fecha_vencimiento, tasa, tipo_tasa, periodicidad, modalidad, base_dias or 365

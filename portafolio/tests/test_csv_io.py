@@ -29,7 +29,7 @@ def test_ida_y_vuelta(sesion, portafolio, instrumentos):
     assert salida.getvalue() == (
         "fecha,instrumento,tipo,monto,nota\n"
         "2024-01-02,,APORTE,10000000,Aporte inicial\n"
-        "2024-01-02,CDT Banco A,COMPRA,10000000.50,\n"
+        "2024-01-02,CDT Banco A,COMPRA,10000000.5,\n"  # igual en SQLite y PostgreSQL
     )
 
     salida = io.StringIO()

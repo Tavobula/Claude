@@ -14,13 +14,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "openpyxl>=3.1"]
+dev = ["pytest>=8", "openpyxl>=3.1", "httpx>=0.27"]
 ui = ["streamlit>=1.30"]
 excel = ["openpyxl>=3.1"]
-api = ["fastapi>=0.110", "uvicorn>=0.29"]
+api = ["fastapi>=0.110", "uvicorn>=0.29", "pyjwt[crypto]>=2.8", "python-multipart>=0.0.9"]
+postgres = ["psycopg[binary]>=3.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+portafolio = ["api/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

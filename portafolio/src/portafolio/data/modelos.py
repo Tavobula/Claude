@@ -149,11 +149,20 @@ class Parametro(Base):
 
 class Usuario(Base):
     __tablename__ = "usuario"
+    __table_args__ = (UniqueConstraint("emisor", "sujeto"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nombre: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(254), unique=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora_bogota)
+    # Identidad en el proveedor de ingreso (claims "iss" y "sub" del token).
+    # Nulos en el modo personal, donde no hay ingreso.
+    emisor: Mapped[str | None] = mapped_column(String(255))
+    sujeto: Mapped[str | None] = mapped_column(String(255))
+    es_administrador: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Autorización de tratamiento de datos personales (Ley 1581 de 2012).
+    autorizacion_datos_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version_politica: Mapped[str | None] = mapped_column(String(20))
 
     portafolios: Mapped[list[Portafolio]] = relationship(back_populates="usuario")
 

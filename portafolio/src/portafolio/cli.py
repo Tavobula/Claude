@@ -8,6 +8,10 @@ Ejemplos:
     python -m portafolio series listar
     python -m portafolio parametros importar datos/parametros_ejemplo.csv
     python -m portafolio --db sqlite:///demo.db demo
+    python -m portafolio api --puerto 8000
+    python -m portafolio token --sujeto ana --email ana@example.com     # solo modo local
+    python -m portafolio usuarios admin ana@example.com
+    python -m portafolio usuarios vincular ana@example.com --emisor https://... --sujeto auth0|123
 """
 
 from __future__ import annotations
@@ -20,11 +24,12 @@ from pathlib import Path
 
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
+from portafolio.api.config import ConfiguracionInvalidaError
 from portafolio.core.calendario import hoy_bogota
 from portafolio.data.db import crear_motor, fabrica_sesiones
 from portafolio.sources import archivo, catalogo
 from portafolio.sources.base import DefinicionSerie, ErrorFuente
-from portafolio.services import csv_io, demo, series
+from portafolio.services import csv_io, cuenta, demo, series
 
 
 def _definicion(codigo: str, nombre: str | None) -> DefinicionSerie:
@@ -82,6 +87,51 @@ def _demo(_args, sesion) -> str:
     return f"Portafolio '{portafolio.nombre}' creado con datos ficticios."
 
 
+def _api(args, _sesion) -> str:
+    import uvicorn
+
+    uvicorn.run("portafolio.api.app:crear_app", factory=True, host=args.host, port=args.puerto, proxy_headers=True)
+    return "API detenida."
+
+
+def _token(args, _sesion) -> str:
+    from portafolio.api.auth import VerificadorLocal
+    from portafolio.api.config import Configuracion
+
+    config = Configuracion.desde_entorno()
+    if config.modo_auth != "local":
+        raise ValueError("Los tokens locales solo existen en modo local (PORTAFOLIO_AUTH_MODO=local).")
+    return VerificadorLocal(config.secreto_local).emitir(args.sujeto, args.email, args.nombre, args.horas)
+
+
+def _usuarios_listar(_args, sesion) -> str:
+    from portafolio.services import consultas
+
+    lineas = [
+        f"{u.id:>4}  {u.email:<40} {'admin' if u.es_administrador else '     '}  "
+        f"{'autorizó ' + u.version_politica if u.version_politica else 'sin autorización'}  "
+        f"{u.emisor or '(modo personal)'}"
+        for u in consultas.usuarios(sesion)
+    ]
+    return "\n".join(lineas) or "No hay usuarios."
+
+
+def _usuarios_admin(args, sesion) -> str:
+    try:
+        usuario = cuenta.definir_administrador(sesion, args.email, not args.quitar)
+    except LookupError as error:
+        raise ValueError(str(error)) from None
+    return f"{usuario.email}: {'es' if usuario.es_administrador else 'ya no es'} administrador."
+
+
+def _usuarios_vincular(args, sesion) -> str:
+    try:
+        usuario = cuenta.vincular_identidad(sesion, args.email, args.emisor, args.sujeto)
+    except (LookupError, cuenta.ConflictoIdentidadError) as error:
+        raise ValueError(str(error)) from None
+    return f"{usuario.email} ahora ingresa como {args.sujeto} de {args.emisor}."
+
+
 def _resumen(r: series.ResumenCarga) -> str:
     rango = f" ({r.desde} a {r.hasta})" if r.desde else ""
     return f"{r.codigo}: {r.nuevas} nuevos, {r.actualizadas} corregidos, {r.sin_cambio} sin cambio{rango}."
@@ -119,6 +169,30 @@ def construir_parser() -> argparse.ArgumentParser:
     pimp.add_argument("archivo")
     pimp.set_defaults(funcion=_parametros)
     grupos.add_parser("demo", help="Crea datos ficticios en una base vacía").set_defaults(funcion=_demo)
+
+    api = grupos.add_parser("api", help="Inicia la API (configuración en variables PORTAFOLIO_*)")
+    api.add_argument("--host", default="127.0.0.1")
+    api.add_argument("--puerto", type=int, default=8000)
+    api.set_defaults(funcion=_api)
+
+    token = grupos.add_parser("token", help="Emite un token de desarrollo (solo modo local)")
+    token.add_argument("--sujeto", required=True)
+    token.add_argument("--email")
+    token.add_argument("--nombre")
+    token.add_argument("--horas", type=float, default=8)
+    token.set_defaults(funcion=_token)
+
+    u = grupos.add_parser("usuarios", help="Usuarios de la API").add_subparsers(dest="accion", required=True)
+    u.add_parser("listar").set_defaults(funcion=_usuarios_listar)
+    adm = u.add_parser("admin", help="Da (o quita con --quitar) el rol de administrador")
+    adm.add_argument("email")
+    adm.add_argument("--quitar", action="store_true")
+    adm.set_defaults(funcion=_usuarios_admin)
+    vin = u.add_parser("vincular", help="Asocia un usuario existente a su identidad del proveedor de ingreso")
+    vin.add_argument("email")
+    vin.add_argument("--emisor", required=True, help="claim iss del proveedor")
+    vin.add_argument("--sujeto", required=True, help="claim sub del usuario en el proveedor")
+    vin.set_defaults(funcion=_usuarios_vincular)
     return parser
 
 
@@ -129,7 +203,14 @@ def main(argv: list[str] | None = None) -> int:
         with fabrica_sesiones(motor)() as sesion:
             mensaje = args.funcion(args, sesion)
             sesion.commit()
-    except (archivo.ErrorLectura, csv_io.ErrorImportacion, ErrorFuente, ValueError, demo.BaseNoVaciaError) as error:
+    except (
+        archivo.ErrorLectura,
+        csv_io.ErrorImportacion,
+        ErrorFuente,
+        ValueError,
+        demo.BaseNoVaciaError,
+        ConfiguracionInvalidaError,
+    ) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
     except (OperationalError, ProgrammingError) as error:

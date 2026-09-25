@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from portafolio.data import repositorios
+from portafolio.data.tipos import Dinero, Tasa, validar_escala
 from portafolio.data.modelos import Movimiento, Parametro, Portafolio, TipoMovimiento, Valoracion
 
 COLUMNAS_MOVIMIENTOS = ["fecha", "instrumento", "tipo", "monto", "nota"]
@@ -34,11 +35,11 @@ class ErrorImportacion(ValueError):
         super().__init__("\n".join(errores))
 
 
-def _decimal(texto: str) -> Decimal:
+def _decimal(texto: str, escala: int = Dinero.escala) -> Decimal:
     valor = Decimal(texto.strip())
     if not valor.is_finite():
         raise InvalidOperation
-    return valor
+    return validar_escala(valor, escala, "El monto")
 
 
 def _leer(archivo: TextIO, columnas: list[str], portafolio: Portafolio, sesion: Session):
@@ -168,7 +169,7 @@ def importar_parametros(sesion: Session, archivo: TextIO) -> int:
                 (
                     nombre,
                     date.fromisoformat(fila["vigente_desde"].strip()),
-                    _decimal(fila["valor"]),
+                    _decimal(fila["valor"], Tasa.escala),
                     (fila.get("descripcion") or "").strip() or None,
                 )
             )

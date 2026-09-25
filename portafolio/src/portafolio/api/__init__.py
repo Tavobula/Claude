@@ -1,5 +1,10 @@
-"""API FastAPI (fase multiusuario).
+"""API REST (FastAPI) para uso multiusuario.
 
-Envolverá los servicios de ``portafolio.services`` y manejará la autenticación
-con tokens o un proveedor de identidad. No forma parte del MVP.
+Cada solicitud llega con un token de un proveedor de identidad (OIDC). La API
+identifica al usuario, exige la autorización de tratamiento de datos y solo
+deja ver y modificar sus propios portafolios. Toda la lógica está en
+``portafolio.services``; aquí solo hay autenticación, autorización y
+traducción entre JSON y los servicios.
+
+Ejecutar: ``python -m portafolio api`` (ver ``api.config`` para las variables).
 """

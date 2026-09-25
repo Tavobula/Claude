@@ -6,6 +6,7 @@ import io
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
+from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import PurePath
 
 from sqlalchemy import select
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session
 from portafolio.core.inflacion import normalizar_fecha
 from portafolio.data import repositorios
 from portafolio.data.modelos import Parametro, Serie, ValorSerie
+from portafolio.data.tipos import Tasa, sin_ceros
 from portafolio.sources import archivo
 from portafolio.sources.base import Conector, DefinicionSerie, Observacion
 
@@ -43,17 +45,22 @@ def asegurar_serie(sesion: Session, definicion: DefinicionSerie) -> Serie:
     return serie
 
 
+_ESCALA = Decimal(1).scaleb(-Tasa.escala)
+
+
 def guardar_observaciones(
     sesion: Session, definicion: DefinicionSerie, observaciones: Iterable[Observacion]
 ) -> ResumenCarga:
-    """Inserta o corrige valores. Un valor corregido por la fuente se actualiza."""
+    """Inserta o corrige valores (redondeados a 10 decimales). Un valor corregido por la fuente se actualiza."""
     serie = asegurar_serie(sesion, definicion)
     por_fecha: dict[date, Observacion] = {}
     for o in observaciones:
         fecha = normalizar_fecha(o.fecha, definicion.frecuencia)
         if o.valor <= 0 and definicion.unidad != "tasa":
             raise ValueError(f"{definicion.codigo}: valor no positivo el {fecha}.")
-        por_fecha[fecha] = Observacion(fecha, o.valor)
+        # Las fuentes (y Excel) pueden traer más decimales que la columna: se
+        # redondea aquí, a la vista, en lugar de dejar que cada motor decida.
+        por_fecha[fecha] = Observacion(fecha, sin_ceros(o.valor.quantize(_ESCALA, rounding=ROUND_HALF_EVEN)))
     if not por_fecha:
         return ResumenCarga(definicion.codigo, 0, 0, 0, None, None)
 

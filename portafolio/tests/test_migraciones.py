@@ -6,8 +6,9 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
+from conftest import URL_PRUEBAS
 from portafolio.data.db import crear_motor
 from portafolio.data.modelos import Base
 
@@ -22,7 +23,14 @@ def _config(url: str) -> Config:
 
 
 def test_migraciones_coinciden_con_modelos(tmp_path):
-    url = f"sqlite:///{tmp_path / 'prueba.db'}"
+    url = URL_PRUEBAS if URL_PRUEBAS.startswith("postgresql") else f"sqlite:///{tmp_path / 'prueba.db'}"
+    motor = crear_motor(url)
+    # Parte de una base vacía también en PostgreSQL, incluido el registro de
+    # versiones de Alembic (si no, "upgrade head" creería que no hay nada que hacer).
+    Base.metadata.drop_all(motor)
+    with motor.begin() as conexion:
+        conexion.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    motor.dispose()
     config = _config(url)
     command.upgrade(config, "head")
 

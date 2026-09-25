@@ -8,6 +8,33 @@ from sqlalchemy import Numeric, String
 from sqlalchemy.types import TypeDecorator
 
 
+class EscalaExcedidaError(ValueError):
+    pass
+
+
+def validar_escala(valor: Decimal, escala: int, nombre: str = "El valor") -> Decimal:
+    """Rechaza más decimales de los que guarda la columna.
+
+    PostgreSQL redondearía en silencio y SQLite guardaría todo; así ambos
+    motores se comportan igual.
+    """
+    valor = Decimal(valor)
+    if valor.is_finite() and sin_ceros(valor).as_tuple().exponent < -escala:
+        raise EscalaExcedidaError(f"{nombre} admite máximo {escala} decimales: {valor}")
+    return valor
+
+
+def sin_ceros(valor: Decimal) -> Decimal:
+    """Quita los ceros finales sin pasar a notación exponencial.
+
+    PostgreSQL devuelve ``10000000.000000`` (la escala de la columna) y SQLite
+    el texto guardado; así ambos leen ``10000000`` y ``10000000.5``.
+    """
+    if valor == valor.to_integral_value():
+        return valor.quantize(Decimal(1))
+    return valor.normalize()
+
+
 class DecimalExacto(TypeDecorator):
     """Número decimal exacto: ``NUMERIC`` en PostgreSQL, texto en SQLite.
 
@@ -36,6 +63,7 @@ class DecimalExacto(TypeDecorator):
         if isinstance(value, float):
             raise TypeError("Use Decimal (o int/str) para montos; float pierde precisión.")
         valor = Decimal(value)
+        validar_escala(valor, self.escala)
         if dialect.name == "sqlite":
             return str(valor)
         return valor
@@ -43,7 +71,7 @@ class DecimalExacto(TypeDecorator):
     def process_result_value(self, value, dialect):
         if value is None:
             return None
-        return Decimal(value)
+        return sin_ceros(Decimal(value))
 
     def __repr__(self) -> str:
         return f"DecimalExacto(precision={self.precision}, escala={self.escala})"

@@ -13,13 +13,15 @@ src/portafolio/
 ├── core/        # cálculos puros: xirr, dietz, twr, atribucion, cdt, impuestos, inflacion, calendario
 ├── data/        # modelos SQLAlchemy, tipos, conexión, repositorios
 ├── services/    # casos de uso: rendimientos, atribucion, inflacion, series, cdt, impuestos,
-│                #   registro, consultas, parametros, csv_io, demo
+│                #   registro, consultas, cuenta, parametros, csv_io, demo
 ├── sources/     # conectores: datos.gov.co (Socrata), archivos CSV/Excel, catálogo de series
-├── api/         # FastAPI (fase multiusuario)
+├── api/         # FastAPI: autenticación OIDC, autorización de datos, rutas /v1
 ├── ui/          # Streamlit: app.py, graficos.py, formato.py
 └── cli.py       # python -m portafolio ...
 migrations/      # Alembic
 datos/           # parametros_ejemplo.csv
+docs/            # despliegue.md
+Dockerfile, docker-compose.yml, Caddyfile, .env.ejemplo
 tests/           # incluye casos/xirr_excel.csv, validados contra Excel
 ```
 
@@ -78,6 +80,12 @@ alembic revision --autogenerate -m "descripcion"
 ```
 
 `tests/test_migraciones.py` falla si las migraciones y los modelos no coinciden.
+
+Las pruebas usan SQLite en memoria. Para correrlas contra PostgreSQL:
+
+```bash
+PORTAFOLIO_TEST_DB_URL=postgresql+psycopg://usuario@localhost:5432/pruebas pytest
+```
 
 ## Convenciones de datos
 
@@ -294,6 +302,36 @@ contribución; **las contribuciones suman exactamente el Dietz del portafolio**.
   registro de datos (`services/registro.py`), que valida montos, pertenencia
   al portafolio y condiciones de CDT.
 
+## Multiusuario: API
+
+```bash
+pip install -e ".[api,postgres]"
+export PORTAFOLIO_AUTH_SECRETO=$(python -c "import secrets; print(secrets.token_urlsafe(40))")
+python -m portafolio api                                   # http://127.0.0.1:8000/docs
+TOKEN=$(python -m portafolio token --sujeto ana --email ana@example.com)
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/v1/yo
+```
+
+Ese es el **modo local**, para desarrollo. En producción la API solo acepta
+tokens de un proveedor OIDC, exige PostgreSQL y se niega a arrancar si no.
+La documentación interactiva está en `/docs`.
+
+| Tema | Cómo funciona |
+|---|---|
+| Identidad | Por `iss` + `sub` del token. El primer ingreso crea el usuario. Un correo existente nunca se vincula solo: `python -m portafolio usuarios vincular` |
+| Autorización de datos | Sin aceptar la política vigente (`POST /v1/yo/autorizacion`), las rutas de datos responden 403. Se guardan fecha y versión |
+| Aislamiento | Todo portafolio, instrumento o movimiento de otro usuario responde 404 |
+| Datos globales | Series y parámetros: todos los consultan, solo administradores los cargan (`python -m portafolio usuarios admin`) |
+| Derechos del titular | `GET /v1/yo/datos` descarga todo; `DELETE /v1/yo?confirmar=true` borra la cuenta y sus datos |
+| Montos | Como texto JSON (`"1500000.50"`); un número con decimales se rechaza porque pasaría por `float`. Máximo 6 decimales (10 en tasas) |
+| Errores | `{"detail": {"codigo": ..., "detalle": ...}}`: 401 sin token, 403 sin autorización, 404, 409 si no se puede calcular (falta una valoración o una serie), 422 datos inválidos |
+
+Despliegue con Docker (PostgreSQL, API, Caddy con HTTPS y respaldos diarios):
+ver **[docs/despliegue.md](docs/despliegue.md)**, que incluye la lista de
+verificación de la Ley 1581 de 2012. La política de tratamiento de datos es un
+borrador en `src/portafolio/api/politica_tratamiento_datos.md` que debe
+completar y revisar un abogado antes de abrir el servicio.
+
 ## Fases
 
 1. Esqueleto, modelo de datos y XIRR ✔
@@ -302,5 +340,5 @@ contribución; **las contribuciones suman exactamente el Dietz del portafolio**.
 4. Deflactación con UVR/IPC y conectores ✔
    (pendiente: CDT de tasa variable IBR/IPC + puntos)
 5. Atribución de rendimientos e interfaz Streamlit ✔
-6. Multiusuario: API FastAPI, autenticación, PostgreSQL, despliegue, política
-   de tratamiento de datos (Ley 1581 de 2012)
+6. Multiusuario: API FastAPI, autenticación OIDC, PostgreSQL, despliegue y
+   política de tratamiento de datos (Ley 1581 de 2012) ✔
