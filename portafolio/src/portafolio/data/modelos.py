@@ -17,6 +17,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     Enum,
@@ -26,10 +27,12 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from portafolio.core.calendario import ahora_bogota
+from portafolio.core.cdt import Modalidad, Periodicidad, TipoTasa
 from portafolio.data.tipos import Dinero, Tasa
 
 # Nombres de restricciones deterministas: Alembic los necesita para poder
@@ -191,8 +194,11 @@ class Instrumento(Base):
     moneda: Mapped[str] = mapped_column(String(3), default="COP")
     # Serie global de precios o valor de unidad, si el instrumento tiene una.
     serie_id: Mapped[int | None] = mapped_column(ForeignKey("serie.id"))
+    # Cuenta marcada como exenta de GMF (una por persona, hasta el tope mensual).
+    exenta_gmf: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     portafolio: Mapped[Portafolio] = relationship(back_populates="instrumentos")
+    condicion_cdt: Mapped[CondicionCDT | None] = relationship(back_populates="instrumento")
 
 
 def _fk_instrumento() -> ForeignKeyConstraint:
@@ -206,7 +212,11 @@ class Movimiento(Base):
     """Flujo de dinero. ``monto`` es siempre positivo; el signo lo da ``tipo``."""
 
     __tablename__ = "movimiento"
-    __table_args__ = (_fk_portafolio(), _fk_instrumento())
+    __table_args__ = (
+        _fk_portafolio(),
+        _fk_instrumento(),
+        UniqueConstraint("instrumento_id", "clave_generacion"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     usuario_id: Mapped[int] = mapped_column(index=True)
@@ -217,6 +227,9 @@ class Movimiento(Base):
     tipo: Mapped[TipoMovimiento] = mapped_column(_enum(TipoMovimiento))
     monto: Mapped[Decimal] = mapped_column(Dinero)
     nota: Mapped[str | None] = mapped_column(Text)
+    # Identifica los movimientos generados por el sistema (p. ej. "cdt:interes:2025-06-03")
+    # para no duplicarlos al regenerar. Nulo en los que registra el usuario.
+    clave_generacion: Mapped[str | None] = mapped_column(String(60))
 
     instrumento: Mapped[Instrumento | None] = relationship()
 
@@ -239,6 +252,30 @@ class Valoracion(Base):
     valor: Mapped[Decimal] = mapped_column(Dinero)
 
     instrumento: Mapped[Instrumento] = relationship()
+
+
+class CondicionCDT(Base):
+    """Condiciones pactadas de un CDT de tasa fija (una por instrumento)."""
+
+    __tablename__ = "condicion_cdt"
+    __table_args__ = (_fk_portafolio(), _fk_instrumento())
+
+    instrumento_id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(index=True)
+    portafolio_id: Mapped[int] = mapped_column(index=True)
+    capital: Mapped[Decimal] = mapped_column(Dinero)
+    fecha_emision: Mapped[date] = mapped_column(Date)
+    fecha_vencimiento: Mapped[date] = mapped_column(Date)
+    tasa: Mapped[Decimal] = mapped_column(Tasa)  # fracción: 0.105 = 10,5 %
+    tipo_tasa: Mapped[TipoTasa] = mapped_column(_enum(TipoTasa), default=TipoTasa.EFECTIVA_ANUAL)
+    periodicidad: Mapped[Periodicidad] = mapped_column(
+        _enum(Periodicidad), default=Periodicidad.AL_VENCIMIENTO
+    )
+    modalidad: Mapped[Modalidad] = mapped_column(_enum(Modalidad), default=Modalidad.VENCIDA)
+    # Nulo: se usa el parámetro "base_dias" vigente en la emisión.
+    base_dias: Mapped[int | None]
+
+    instrumento: Mapped[Instrumento] = relationship(back_populates="condicion_cdt")
 
 
 class Objetivo(Base):

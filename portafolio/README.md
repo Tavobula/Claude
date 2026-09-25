@@ -10,13 +10,14 @@ varios.
 
 ```
 src/portafolio/
-├── core/        # cálculos puros: xirr.py, dietz.py, twr.py, calendario.py (luego inflacion, cdt)
+├── core/        # cálculos puros: xirr, dietz, twr, cdt, impuestos, calendario (luego inflacion)
 ├── data/        # modelos SQLAlchemy, tipos, conexión, repositorios
-├── services/    # casos de uso: rendimientos.py, csv_io.py
+├── services/    # casos de uso: rendimientos, cdt, impuestos, parametros, csv_io
 ├── sources/     # conectores Banrep, DANE, Superfinanciera (fase posterior)
 ├── api/         # FastAPI (fase multiusuario)
 └── ui/          # Streamlit
 migrations/      # Alembic
+datos/           # parametros_ejemplo.csv
 tests/           # incluye casos/xirr_excel.csv, validados contra Excel
 ```
 
@@ -126,11 +127,74 @@ Convenciones:
   instrumento cuentan como rendimiento, netos de la retención (`IMPUESTO`).
 - `anualizado` solo se calcula para periodos de 365 días o más (criterio GIPS).
 
+## CDT, retención y GMF
+
+### Parámetros
+
+Ninguna tarifa está en el código. Cárguelas en la tabla `parametro`:
+
+```python
+from portafolio.services.csv_io import importar_parametros
+with open("datos/parametros_ejemplo.csv", encoding="utf-8") as f:
+    importar_parametros(sesion, f)
+```
+
+`datos/parametros_ejemplo.csv` trae **valores de ejemplo que debe verificar**.
+Si falta un parámetro obligatorio, el cálculo se detiene con
+`ParametroNoDefinidoError` en lugar de suponer una tarifa.
+
+| Parámetro | Uso | Obligatorio |
+|---|---|---|
+| `retencion_rendimientos_cdt` | Tarifa de retención sobre intereses de CDT | Sí, para CDT |
+| `componente_inflacionario` | Fracción del interés no gravada (personas naturales no obligadas a llevar contabilidad) | No (0) |
+| `base_dias` | 365 o 360, si el CDT no lo especifica | No (365) |
+| `gmf_tarifa` | 0.004 | Sí, para GMF |
+| `uvt`, `gmf_tope_exento_uvt` | Tope mensual exento de la cuenta marcada | Si la cuenta es exenta |
+
+### CDT
+
+Registre el instrumento (`tipo=CDT`) y sus condiciones en `CondicionCDT`:
+capital, emisión, vencimiento, tasa (fracción), tipo de tasa (E.A. o nominal),
+periodicidad de pago y modalidad. Luego:
+
+- `proyectar_cdt`: todos los pagos, con retención e interés neto.
+- `estado_cdt`: capital e interés causado a una fecha, y la retención que se
+  practicaría si se pagara ese día.
+- `sincronizar_cdt`: registra la COMPRA, cada INTERES con su IMPUESTO
+  (retención) y la VENTA del capital, más valoraciones en la emisión, en cada
+  pago, en cada fin de mes y en la fecha de corte. Se puede correr las veces
+  que quiera: no duplica movimientos (`clave_generacion`) ni reemplaza
+  valoraciones que usted haya registrado.
+
+Con eso, `tir_instrumento` y `twr_instrumento` ya dan el rendimiento neto de
+retención del CDT.
+
+Convenciones (verifíquelas contra su extracto):
+
+- Una tasa nominal se convierte a E.A. según la periodicidad (N.M.V. → 12
+  periodos). Una tasa anticipada se convierte a su equivalente vencida.
+- El interés de un periodo es `capital × ((1 + EA)^(días/base) − 1)`, con
+  días calendario reales.
+- Los periodos se cuentan desde la emisión. Si el vencimiento no coincide con
+  un periodo completo, el último es más corto.
+- Un pago que cae en fin de semana o festivo se hace el siguiente día hábil,
+  **sin intereses por los días de espera**.
+- Aún no se proyectan CDT con intereses anticipados ni de tasa variable
+  (IBR, IPC + puntos); la tasa variable llega con los conectores de la fase 4.
+
+### GMF
+
+`gmf_cuenta` calcula el 4 × 1.000 de los RETIRO de una cuenta. Si la cuenta
+está marcada `exenta_gmf`, los primeros `gmf_tope_exento_uvt × uvt` pesos de
+cada mes están exentos, y la exención se consume en orden cronológico. El GMF
+de las transferencias para comprar un instrumento no se estima, porque el
+modelo no registra de qué cuenta sale ese dinero.
+
 ## Fases
 
 1. Esqueleto, modelo de datos y XIRR ✔
 2. TWR y Dietz modificado ✔
-3. Causación de CDT, retención y GMF
+3. Causación de CDT, retención y GMF ✔
 4. Deflactación con UVR/IPC y conectores (Banrep, DANE, Superfinanciera)
 5. Atribución de rendimientos e interfaz Streamlit
 6. Multiusuario: API FastAPI, autenticación, PostgreSQL, despliegue, política

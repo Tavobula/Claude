@@ -6,6 +6,7 @@ publicación del valor de unidad de los FIC y los precios de la BVC.
 
 from __future__ import annotations
 
+import calendar
 from datetime import date, datetime, timedelta
 from functools import lru_cache
 from zoneinfo import ZoneInfo
@@ -51,3 +52,14 @@ def sumar_dias_habiles(fecha: date, dias: int) -> date:
         if es_dia_habil(fecha):
             restantes -= 1
     return fecha
+
+
+def sumar_meses(fecha: date, meses: int) -> date:
+    """Suma meses conservando el día; si no existe, usa el último día del mes.
+
+    31-ene + 1 mes = 28 (o 29)-feb. Para fechas periódicas, sume siempre desde
+    la fecha original (``emision + k meses``) y no encadene, o el 31 se pierde.
+    """
+    indice = fecha.month - 1 + meses
+    anio, mes = fecha.year + indice // 12, indice % 12 + 1
+    return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))

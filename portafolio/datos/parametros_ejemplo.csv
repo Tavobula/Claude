@@ -1,0 +1,13 @@
+# VALORES DE EJEMPLO: verifíquelos contra la norma vigente y su extracto antes de usarlos.
+# Carga: csv_io.importar_parametros(sesion, open("datos/parametros_ejemplo.csv"))
+# Las tasas van como fracción (0.04 = 4 %). Agregue una fila nueva cuando cambie una tarifa;
+# no edite la anterior, así el pasado se sigue calculando con la tarifa de su momento.
+nombre,vigente_desde,valor,descripcion
+base_dias,2000-01-01,365,Base de días para causar intereses de CDT
+retencion_rendimientos_cdt,2000-01-01,0.04,Retención en la fuente sobre intereses de CDT (verificar)
+gmf_tarifa,2004-01-01,0.004,Gravamen a los movimientos financieros (4 x 1.000)
+gmf_tope_exento_uvt,2017-01-01,350,Tope mensual exento de GMF en la cuenta marcada (UVT)
+uvt,2024-01-01,47065,Unidad de valor tributario 2024
+uvt,2025-01-01,49799,Unidad de valor tributario 2025
+# componente_inflacionario: fracción del rendimiento no gravada para personas naturales
+# no obligadas a llevar contabilidad. Se fija por decreto cada año; agréguela si le aplica.

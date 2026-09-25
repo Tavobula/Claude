@@ -6,6 +6,7 @@ su nombre dentro del portafolio; debe existir antes de importar.
 
 Movimientos:   fecha,instrumento,tipo,monto,nota
 Valoraciones:  fecha,instrumento,valor
+Parámetros:    nombre,vigente_desde,valor,descripcion   (globales, no de un portafolio)
 """
 
 from __future__ import annotations
@@ -19,10 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from portafolio.data import repositorios
-from portafolio.data.modelos import Movimiento, Portafolio, TipoMovimiento, Valoracion
+from portafolio.data.modelos import Movimiento, Parametro, Portafolio, TipoMovimiento, Valoracion
 
 COLUMNAS_MOVIMIENTOS = ["fecha", "instrumento", "tipo", "monto", "nota"]
 COLUMNAS_VALORACIONES = ["fecha", "instrumento", "valor"]
+COLUMNAS_PARAMETROS = ["nombre", "vigente_desde", "valor", "descripcion"]
 _SOBRANTES = "__sobrantes__"
 
 
@@ -144,3 +146,43 @@ def exportar_valoraciones(sesion: Session, portafolio: Portafolio, archivo: Text
         escritor.writerow([v.fecha.isoformat(), v.instrumento.nombre, v.valor])
         total += 1
     return total
+
+
+def importar_parametros(sesion: Session, archivo: TextIO) -> int:
+    """Agrega o actualiza parámetros (la llave es nombre + vigente_desde).
+
+    Las líneas que empiezan con ``#`` se ignoran, para poder anotar la fuente.
+    """
+    lector = csv.DictReader((linea for linea in archivo if not linea.startswith("#")), restkey=_SOBRANTES)
+    faltantes = {"nombre", "vigente_desde", "valor"} - set(lector.fieldnames or [])
+    if faltantes:
+        raise ErrorImportacion([f"Faltan columnas: {', '.join(sorted(faltantes))}"])
+    filas, errores = [], []
+    for n, fila in enumerate(lector, start=2):
+        try:
+            _validar_ancho(fila)
+            nombre = fila["nombre"].strip()
+            if not nombre:
+                raise ValueError("falta el nombre")
+            filas.append(
+                (
+                    nombre,
+                    date.fromisoformat(fila["vigente_desde"].strip()),
+                    _decimal(fila["valor"]),
+                    (fila.get("descripcion") or "").strip() or None,
+                )
+            )
+        except (ValueError, KeyError, InvalidOperation) as error:
+            errores.append(f"Fila {n}: {error or 'valor inválido'}")
+    if errores:
+        raise ErrorImportacion(errores)
+    for nombre, vigente_desde, valor, descripcion in filas:
+        existente = sesion.scalar(
+            select(Parametro).where(Parametro.nombre == nombre, Parametro.vigente_desde == vigente_desde)
+        )
+        if existente:
+            existente.valor, existente.descripcion = valor, descripcion
+        else:
+            sesion.add(Parametro(nombre=nombre, vigente_desde=vigente_desde, valor=valor, descripcion=descripcion))
+    sesion.flush()
+    return len(filas)
