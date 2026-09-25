@@ -56,3 +56,18 @@ def ultima_valoracion(sesion: Session, instrumento_id: int, fecha_corte: date) -
         .limit(1)
     )
     return sesion.scalar(consulta)
+
+
+def valoraciones_hasta(
+    sesion: Session,
+    fecha_corte: date,
+    *,
+    portafolio_id: int | None = None,
+    instrumento_id: int | None = None,
+) -> list[Valoracion]:
+    consulta = select(Valoracion).where(Valoracion.fecha <= fecha_corte)
+    if portafolio_id is not None:
+        consulta = consulta.where(Valoracion.portafolio_id == portafolio_id)
+    if instrumento_id is not None:
+        consulta = consulta.where(Valoracion.instrumento_id == instrumento_id)
+    return list(sesion.scalars(consulta.order_by(Valoracion.fecha, Valoracion.id)))
