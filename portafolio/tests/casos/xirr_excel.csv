@@ -1,0 +1,15 @@
+caso,tir_excel,fecha,monto
+# Ejemplo de la documentación oficial de XIRR de Microsoft Excel.,,,
+microsoft_xirr,0.373362535,2008-01-01,-10000
+microsoft_xirr,0.373362535,2008-03-01,2750
+microsoft_xirr,0.373362535,2008-10-30,4250
+microsoft_xirr,0.373362535,2009-02-15,3250
+microsoft_xirr,0.373362535,2009-04-01,2750
+# Casos cerrados: la TIR se conoce exactamente (base 365 días).,,,
+un_anio_10,0.1,2023-01-01,-1000
+un_anio_10,0.1,2024-01-01,1100
+dos_anios_10,0.1,2023-01-01,-1000
+dos_anios_10,0.1,2024-12-31,1210
+perdida_10,-0.1,2023-01-01,-1000
+perdida_10,-0.1,2024-01-01,900
+# Agregue aquí sus propios casos calculados con TIR.NO.PER en Excel.,,,
